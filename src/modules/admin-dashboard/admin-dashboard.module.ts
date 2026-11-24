@@ -6,10 +6,11 @@ import { TokenRegistryModule } from "../../common/token-registry/token-registry.
 import { FxModule } from "../../common/fx/fx.module";
 import { AuditLogsModule } from "../audit-logs/audit-logs.module";
 import { AdminJobsService } from "./admin-jobs.service";
+import { AdminQueuesController } from "./admin-queues.controller";
 
 @Module({
   imports: [ScheduleModule, TokenRegistryModule, FxModule, AuditLogsModule],
-  controllers: [AdminDashboardController],
+  controllers: [AdminDashboardController, AdminQueuesController],
   providers: [AdminDashboardService, AdminJobsService],
 })
 export class AdminDashboardModule {}

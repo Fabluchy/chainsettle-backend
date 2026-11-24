@@ -4,6 +4,7 @@ import {
   NotFoundException,
   ForbiddenException,
   BadRequestException,
+  Optional,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { Cron, CronExpression } from "@nestjs/schedule";
@@ -22,6 +23,11 @@ import {
   maskHeaders,
 } from "./webhook-headers.util";
 import { requestIdStorage } from "../../common/middleware/request-id.middleware";
+import { QueueService } from "../../common/queue/queue.service";
+import {
+  QueueName,
+  WEBHOOK_DELIVERY_JOB,
+} from "../../common/queue/queue.constants";
 
 // ─── Retry policy ────────────────────────────────────────────────────────────
 
@@ -125,6 +131,7 @@ export class WebhooksService {
     private readonly prisma: PrismaService,
     private readonly auditLog: AuditLogService,
     private readonly metrics: MetricsService,
+    @Optional() private readonly queue?: QueueService,
   ) {
     this.deliveryTimeoutMs = this.normalizePositiveInteger(
       this.config.get<number | string>("WEBHOOK_DELIVERY_TIMEOUT_MS", 10_000),
@@ -425,6 +432,15 @@ export class WebhooksService {
 
   // ── Delivery ───────────────────────────────────────────────────────────────
 
+  /**
+   * Fans an event out to every subscribed endpoint.
+   *
+   * Each endpoint gets its own durable BullMQ job (#661), so a slow or hanging
+   * target no longer blocks the caller and a delivery in flight when the pod
+   * restarts is retried from the queue. When the queue runtime is unavailable
+   * (e.g. Redis down, or SDK generation) delivery falls back to running
+   * in-process so events are not dropped.
+   */
   async dispatch(
     eventType: NotificationType,
     payload: Record<string, unknown>,
@@ -432,9 +448,69 @@ export class WebhooksService {
     const endpoints = await this.prisma.webhookEndpoint.findMany({
       where: { active: true, events: { has: eventType } },
     });
+    if (endpoints.length === 0) return;
+
+    if (this.queue) {
+      const results = await Promise.allSettled(
+        endpoints.map(async (ep) => ({
+          endpoint: ep,
+          jobId: await this.queue!.enqueue(
+            QueueName.WEBHOOKS,
+            WEBHOOK_DELIVERY_JOB,
+            {
+              endpointId: ep.id,
+              eventType: eventType as string,
+              payload,
+            },
+            { removeOnComplete: { age: 60 * 60, count: 1_000 } },
+          ),
+        })),
+      );
+
+      // Only endpoints that could not be queued are delivered inline, so a
+      // partial Redis failure cannot deliver the same event twice.
+      const notQueued = results.flatMap((result, index) => {
+        if (result.status === 'rejected') {
+          this.logger.warn(
+            `[webhook] Failed to queue delivery for endpoint ${endpoints[index].id}: ${(result.reason as Error)?.message}`,
+          );
+          return [endpoints[index]];
+        }
+        return result.value.jobId ? [] : [endpoints[index]];
+      });
+
+      if (notQueued.length === 0) return;
+
+      await Promise.allSettled(
+        notQueued.map((ep) => this.deliverOnce(ep, eventType as string, payload)),
+      );
+      return;
+    }
+
     await Promise.allSettled(
       endpoints.map((ep) => this.deliverOnce(ep, eventType as string, payload)),
     );
+  }
+
+  /**
+   * Queue worker entry point: delivers one event to one endpoint by id. The
+   * endpoint may have been removed or disabled since the job was enqueued.
+   */
+  async deliverToEndpoint(
+    endpointId: string,
+    eventType: string,
+    payload: Record<string, unknown>,
+  ): Promise<void> {
+    const endpoint = await this.prisma.webhookEndpoint.findFirst({
+      where: { id: endpointId, active: true },
+    });
+    if (!endpoint) {
+      this.logger.debug(
+        `[webhook] Skipping queued delivery for endpoint ${endpointId}: no longer active`,
+      );
+      return;
+    }
+    await this.deliverOnce(endpoint, eventType, payload);
   }
 
   async getDelivery(userId: string, endpointId: string, deliveryId: string) {

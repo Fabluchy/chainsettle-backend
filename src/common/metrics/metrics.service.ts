@@ -17,6 +17,11 @@ export const OUTBOX_EVENTS_COUNTER = 'chainsettle_outbox_events_total';
 /** Undispatched outbox rows - labels: status (PENDING|PROCESSING|DISPATCHED|FAILED) */
 export const OUTBOX_BACKLOG_GAUGE = 'chainsettle_outbox_backlog';
 
+/** BullMQ queue depth - labels: queue (webhooks|emails|exports), state (waiting|active|delayed|failed) */
+export const QUEUE_DEPTH_GAUGE = 'chainsettle_queue_depth';
+/** BullMQ job lifecycle counter - labels: queue, job, result (enqueued|completed|retried|failed) */
+export const QUEUE_JOBS_COUNTER = 'chainsettle_queue_jobs_total';
+
 /** Cron job duration histogram - labels: job */
 export const JOB_DURATION_HISTOGRAM = 'chainsettle_job_duration_seconds';
 /** Cron job runs counter - labels: job, result (success|failure|skipped) */
@@ -43,6 +48,14 @@ export class MetricsService {
     private readonly jobRuns: Counter<string>,
     @InjectMetric(OUTBOX_EVENTS_COUNTER)
     private readonly outboxEvents: Counter<string>,
+    @InjectMetric(WEBHOOK_DELIVERIES_COUNTER)
+    private readonly webhookDeliveries: Counter<string>,
+    @InjectMetric(WEBHOOK_DELIVERY_DURATION_HISTOGRAM)
+    private readonly webhookDeliveryDuration: Histogram<string>,
+    @InjectMetric(QUEUE_DEPTH_GAUGE)
+    private readonly queueDepth: Gauge<string>,
+    @InjectMetric(QUEUE_JOBS_COUNTER)
+    private readonly queueJobs: Counter<string>,
   ) {}
 
   /**
@@ -65,6 +78,20 @@ export class MetricsService {
   /** Records one outbox delivery outcome (#660). */
   recordOutboxEvent(result: 'dispatched' | 'retried' | 'dead_lettered'): void {
     this.outboxEvents.inc({ result });
+  }
+
+  /** Current number of jobs in a BullMQ queue state. */
+  setQueueDepth(queue: string, state: string, count: number): void {
+    this.queueDepth.set({ queue, state }, count);
+  }
+
+  /** Records a BullMQ job lifecycle event (#661). */
+  recordQueueJob(
+    queue: string,
+    job: string,
+    result: 'enqueued' | 'completed' | 'retried' | 'failed',
+  ): void {
+    this.queueJobs.inc({ queue, job, result });
   }
 
   incrementEventsProcessed(eventName: string): void {

@@ -8,6 +8,8 @@ import { ShipmentArchivalJob } from './shipment-archival.job';
 import { ShipmentRemindersService } from './shipment-reminders.service';
 import { ShipmentReminderJob } from './shipment-reminder.job';
 import { LateDeliveryJob } from './late-delivery.job';
+import { ShipmentsExportService } from './shipments-export.service';
+import { ShipmentsExportWorker } from './shipments-export.worker';
 import { CommentsController } from './comments.controller';
 import { CommentsService } from './comments.service';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
@@ -29,6 +31,8 @@ import { AuthModule } from '../auth/auth.module';
     ShipmentRemindersService,
     ShipmentReminderJob,
     LateDeliveryJob,
+    ShipmentsExportService,
+    ShipmentsExportWorker,
   ],
   exports: [ShipmentsService, ShipmentApprovalsService, SavedFiltersService, LateDeliveryJob],
 })

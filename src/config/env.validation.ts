@@ -106,6 +106,21 @@ export const envValidationSchema = Joi.object({
   // Redis
   REDIS_URL: Joi.string().uri({ scheme: ['redis', 'rediss'] }).required(),
 
+  // Background job queues (#661) — BullMQ on Redis.
+  QUEUE_PREFIX: Joi.string().default('chainsettle'),
+  QUEUE_METRICS_INTERVAL_MS: Joi.number().integer().min(1000).default(15000),
+  // Per-queue worker concurrency, total attempts (first try included) and the
+  // exponential back-off base delay in milliseconds.
+  QUEUE_WEBHOOKS_CONCURRENCY: Joi.number().integer().min(1).max(1000).default(5),
+  QUEUE_WEBHOOKS_ATTEMPTS: Joi.number().integer().min(1).max(100).default(5),
+  QUEUE_WEBHOOKS_BACKOFF_MS: Joi.number().integer().min(100).max(3600000).default(5000),
+  QUEUE_EMAILS_CONCURRENCY: Joi.number().integer().min(1).max(1000).default(3),
+  QUEUE_EMAILS_ATTEMPTS: Joi.number().integer().min(1).max(100).default(5),
+  QUEUE_EMAILS_BACKOFF_MS: Joi.number().integer().min(100).max(3600000).default(10000),
+  QUEUE_EXPORTS_CONCURRENCY: Joi.number().integer().min(1).max(1000).default(2),
+  QUEUE_EXPORTS_ATTEMPTS: Joi.number().integer().min(1).max(100).default(3),
+  QUEUE_EXPORTS_BACKOFF_MS: Joi.number().integer().min(100).max(3600000).default(5000),
+
   // IPFS (Pinata)
   IPFS_GATEWAY_URL: Joi.string().uri().default('https://gateway.pinata.cloud/ipfs'),
   IPFS_API_KEY: Joi.string().allow('').default(''),

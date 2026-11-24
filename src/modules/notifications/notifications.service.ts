@@ -15,6 +15,12 @@ import { UpdatePreferencesDto } from './dto/update-preferences.dto';
 import { DEFAULT_LOCALE, I18nService } from '../../i18n/i18n.service';
 import { SmsProviderFactory } from '../../common/providers/sms.provider';
 import { TelegramService } from './telegram.service';
+import { QueueService } from '../../common/queue/queue.service';
+import {
+  EMAIL_SEND_JOB,
+  EmailJobData,
+  QueueName,
+} from '../../common/queue/queue.constants';
 
 type ChannelPrefs = {
   inApp: boolean;
@@ -116,6 +122,7 @@ export class NotificationsService {
     @Optional() private readonly smsProviderFactory: SmsProviderFactory,
     @Optional() private readonly webPush: WebPushService,
     @Optional() private readonly telegram: TelegramService,
+    @Optional() private readonly queue?: QueueService,
   ) {
     this.transporter = nodemailer.createTransport({
       host: this.config.get("SMTP_HOST"),
@@ -1006,7 +1013,7 @@ export class NotificationsService {
         ? `<small style="color: #888;">${footer}</small><br /><small style="color: #888;"><a href="${unsubscribeUrl}" style="color: #888; text-decoration: underline;">Unsubscribe</a></small>`
         : `<small style="color: #888;">${footer}</small>`;
 
-      await this.transporter.sendMail({
+      const mail: EmailJobData = {
         from: this.config.get("EMAIL_FROM", "noreply@chainsetttle.com"),
         to,
         subject: `ChainSettle — ${localizedSubject}`,
@@ -1022,13 +1029,61 @@ export class NotificationsService {
           </div>
         `,
         ...(headers ? { headers } : {}),
-      });
+      };
+
+      // Sending runs on the emails queue so a slow SMTP server cannot hold up
+      // the request and a failed send is retried with back-off (#661).
+      if (await this.enqueueEmail(mail, localizedSubject)) {
+        return true;
+      }
+
+      await this.transporter.sendMail(mail);
       this.logger.log(`Email sent to ${to}: ${localizedSubject}`);
       return true;
     } catch (error) {
       this.logger.error(`Email failed to ${to}`, error.message);
       return false;
     }
+  }
+
+  /**
+   * Queues an already-rendered email. Returns false when no queue is available
+   * (or enqueueing failed), in which case the caller sends inline.
+   */
+  private async enqueueEmail(
+    mail: EmailJobData,
+    localizedSubject: string,
+  ): Promise<boolean> {
+    if (!this.queue) return false;
+
+    try {
+      const jobId = await this.queue.enqueue(
+        QueueName.EMAILS,
+        EMAIL_SEND_JOB,
+        mail,
+      );
+      if (jobId) {
+        this.logger.log(
+          `Email to ${mail.to} queued (job ${jobId}): ${localizedSubject}`,
+        );
+        return true;
+      }
+    } catch (err) {
+      this.logger.warn(
+        `Could not queue email to ${mail.to}; sending inline: ${(err as Error).message}`,
+      );
+    }
+
+    return false;
+  }
+
+  /**
+   * Queue worker entry point: sends one already-rendered email through SMTP.
+   * Throws on failure so BullMQ retries the job with back-off.
+   */
+  async deliverQueuedEmail(mail: EmailJobData): Promise<void> {
+    await this.transporter.sendMail(mail);
+    this.logger.log(`Email sent to ${mail.to}: ${mail.subject}`);
   }
 
   /** True when the address is on the bounce/complaint suppression list (#434). */

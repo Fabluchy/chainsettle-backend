@@ -10,6 +10,7 @@ import { OutboxModule } from '../outbox/outbox.module';
 import { PushNotificationService } from './push-notification.service';
 import { WebPushService } from './web-push.service';
 import { TelegramService } from './telegram.service';
+import { EmailQueueWorker } from './email-queue.worker';
 
 @Module({
   imports: [
@@ -23,7 +24,7 @@ import { TelegramService } from './telegram.service';
     }),
     OutboxModule,
   ],
-  providers: [NotificationsService, NotificationsGateway, NotificationDigestJob, PushNotificationService, WebPushService, TelegramService],
+  providers: [NotificationsService, NotificationsGateway, NotificationDigestJob, PushNotificationService, WebPushService, TelegramService, EmailQueueWorker],
   controllers: [NotificationsController],
   exports: [NotificationsService, NotificationsGateway, PushNotificationService, WebPushService, TelegramService],
 })

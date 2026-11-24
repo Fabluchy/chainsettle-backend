@@ -1,5 +1,8 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
+import { Gauge } from 'prom-client';
+
+export const BUILD_INFO_GAUGE = 'chainsettle_build_info';
 
 /**
  * Build/version info for the running process (#427).
@@ -29,6 +32,23 @@ export function readPackageVersion(root: string = process.cwd()): string | undef
   } catch {
     return undefined;
   }
+}
+
+/** Collector for the chainsettle_build_info gauge (one series, value 1). */
+export function collectBuildInfo(
+  this: Gauge<string>,
+  env: NodeJS.ProcessEnv = process.env,
+): void {
+  const info = resolveBuildInfo(env);
+  this.set(
+    {
+      version: info.version,
+      gitSha: info.gitSha,
+      buildTime: info.buildTime,
+      nodeVersion: info.nodeVersion,
+    },
+    1,
+  );
 }
 
 export function resolveBuildInfo(env: NodeJS.ProcessEnv = process.env): BuildInfo {

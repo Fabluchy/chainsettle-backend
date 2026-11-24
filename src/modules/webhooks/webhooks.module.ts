@@ -5,11 +5,12 @@ import { AdminWebhooksController } from './admin-webhooks.controller';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { ValidWebhookHeadersConstraint } from './dto/create-webhook.dto';
 import { MetricsModule } from '../../common/metrics/metrics.module';
+import { WebhookDeliveryWorker } from './webhook-delivery.worker';
 
 @Module({
   imports: [AuditLogsModule, MetricsModule],
   controllers: [WebhooksController, AdminWebhooksController],
-  providers: [WebhooksService, ValidWebhookHeadersConstraint],
+  providers: [WebhooksService, ValidWebhookHeadersConstraint, WebhookDeliveryWorker],
   exports: [WebhooksService],
 })
 export class WebhooksModule {}

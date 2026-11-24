@@ -54,6 +54,8 @@ import { UserRole } from '@prisma/client';
 import { parseFields, SHIPMENT_LIST_FIELDS, SHIPMENT_DETAIL_FIELDS } from './shipment-fields';
 import { RedisService } from '../../common/redis/redis.service';
 import { ShipmentRemindersService } from './shipment-reminders.service';
+import { ShipmentsExportService } from './shipments-export.service';
+import { CreateExportJobDto } from './dto/create-export-job.dto';
 import { CreateShipmentReminderDto } from './dto/shipment-reminder.dto';
 import { AuthService } from '../auth/auth.service';
 import { SUPPORTED_CURRENCIES } from '../../common/fx/fx-rate.service';
@@ -70,6 +72,7 @@ export class ShipmentsController {
     private readonly redis: RedisService,
     private readonly reminders: ShipmentRemindersService,
     private readonly authService: AuthService,
+    private readonly shipmentExports: ShipmentsExportService,
   ) { }
 
   /**
@@ -278,6 +281,73 @@ export class ShipmentsController {
       res.setHeader('Content-Disposition', `attachment; filename="chainsettle-export-${timestamp}.csv"`);
       res.end(csv);
     }
+  }
+
+  /**
+   * POST /api/v1/shipments/export-jobs
+   * Queue a shipment export (#661). Returns 202 with a job id to poll; the
+   * file is built off the request path by the exports queue worker.
+   */
+  @Post('export-jobs')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @Throttle({ default: { limit: 10, ttl: 60 * 60 * 1000 } })
+  @ApiOperation({ summary: 'Queue a shipment export (CSV or PDF)' })
+  @ApiResponse({ status: 202, description: 'Export job queued' })
+  async createExportJob(
+    @Body() dto: CreateExportJobDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.shipmentExports.enqueue(
+      {
+        stellarAddress: user.stellarAddress,
+        isAdmin: user?.role === UserRole.ADMIN,
+      },
+      dto.format ?? 'csv',
+    );
+  }
+
+  /**
+   * GET /api/v1/shipments/export-jobs/:id
+   * Status of a queued export job, including a download URL once complete.
+   */
+  @Get('export-jobs/:id')
+  @ApiOperation({ summary: 'Get the status of a queued shipment export' })
+  @ApiResponse({ status: 200, description: 'Export job status' })
+  @ApiResponse({ status: 404, description: 'Export job not found' })
+  async getExportJob(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.shipmentExports.getStatus(id, {
+      stellarAddress: user.stellarAddress,
+      isAdmin: user?.role === UserRole.ADMIN,
+    });
+  }
+
+  /**
+   * GET /api/v1/shipments/export-jobs/:id/download
+   * Download the file produced by a completed export job.
+   */
+  @Get('export-jobs/:id/download')
+  @ApiOperation({ summary: 'Download a completed export job' })
+  @ApiResponse({ status: 200, description: 'Export file' })
+  @ApiResponse({ status: 400, description: 'Export job not ready' })
+  @ApiResponse({ status: 404, description: 'Export job or result not found' })
+  async downloadExportJob(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Res() res: Response,
+  ) {
+    const file = await this.shipmentExports.download(id, {
+      stellarAddress: user.stellarAddress,
+      isAdmin: user?.role === UserRole.ADMIN,
+    });
+    res.setHeader('Content-Type', file.contentType);
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${file.filename}"`,
+    );
+    res.end(file.buffer);
   }
 
 

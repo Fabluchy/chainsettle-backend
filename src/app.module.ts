@@ -15,6 +15,12 @@ import { IpfsModule } from './common/ipfs/ipfs.module';
 import { TokenRegistryModule } from './common/token-registry/token-registry.module';
 import { RedisThrottlerStorageService } from './common/throttler/redis-throttler-storage.service';
 import { MetricsModule } from './common/metrics/metrics.module';
+import { QueueModule } from './common/queue/queue.module';
+import { ImpersonationGuard } from './common/guards/impersonation.guard';
+import { DeprecationInterceptor } from './common/interceptors/deprecation.interceptor';
+import { HttpExceptionFilter } from './common/filters/http-exception.filter';
+import { ThrottlerExceptionFilter } from './common/filters/throttler-exception.filter';
+import { LocaleMiddleware } from './i18n/locale.middleware';
 import { HttpMetricsInterceptor } from './common/interceptors/http-metrics.interceptor';
 import { TimeoutInterceptor } from './common/interceptors/timeout.interceptor';
 import { TimeoutGuard } from './common/guards/timeout.guard';
@@ -82,6 +88,7 @@ import { SettlementProposalsModule } from './modules/milestones/settlement-propo
     IpfsModule,
     TokenRegistryModule,
     MetricsModule,
+    QueueModule,
     FxModule,
 
     // Feature modules

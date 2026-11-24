@@ -18,8 +18,18 @@ import {
   JOB_RUNS_COUNTER,
   OUTBOX_EVENTS_COUNTER,
   OUTBOX_BACKLOG_GAUGE,
+  QUEUE_DEPTH_GAUGE,
+  QUEUE_JOBS_COUNTER,
+  WEBHOOK_DELIVERIES_COUNTER,
+  WEBHOOK_DELIVERY_DURATION_HISTOGRAM,
 } from './metrics.service';
-import { resolveBuildInfo } from '../build-info';
+import {
+  BUILD_INFO_GAUGE,
+  collectBuildInfo,
+  resolveBuildInfo,
+} from '../build-info';
+
+export { BUILD_INFO_GAUGE, collectBuildInfo };
 
 const logger = new Logger('MetricsModule');
 
@@ -129,6 +139,26 @@ export async function collectOpenDisputes(this: Gauge<string>, prisma: PrismaSer
       labelNames: ['status'],
       inject: [PrismaService],
       collect: collectOutboxBacklog,
+    }),
+    makeGaugeProvider({
+      name: QUEUE_DEPTH_GAUGE,
+      help: 'Current BullMQ jobs per queue, by state (waiting|active|delayed|failed)',
+      labelNames: ['queue', 'state'],
+    }),
+    makeCounterProvider({
+      name: WEBHOOK_DELIVERIES_COUNTER,
+      help: 'Total webhook delivery attempts, by result and HTTP status class',
+      labelNames: ['result', 'status_code_class'],
+    }),
+    makeHistogramProvider({
+      name: WEBHOOK_DELIVERY_DURATION_HISTOGRAM,
+      help: 'Webhook delivery duration in seconds',
+      buckets: [0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10],
+    }),
+    makeCounterProvider({
+      name: QUEUE_JOBS_COUNTER,
+      help: 'BullMQ jobs enqueued, completed, retried or failed, by queue and job name',
+      labelNames: ['queue', 'job', 'result'],
     }),
     makeGaugeProvider({
       name: SHIPMENTS_BY_STATUS_GAUGE,

@@ -452,6 +452,32 @@ For production, persist `lastProcessedLedger` in the DB (or Redis) so it survive
 
 ---
 
+## Background Jobs (BullMQ)
+
+Webhook delivery, email sending and exports run on Redis-backed **BullMQ**
+queues, so slow work never blocks a request and queued jobs survive a restart.
+
+| Queue | Carries |
+|-------|---------|
+| `webhooks` | One job per endpoint per event — signed HTTP delivery |
+| `emails` | Rendered emails handed to SMTP |
+| `exports` | CSV/PDF shipment export builds, cached in Redis for an hour |
+
+Each queue has its own worker concurrency and retry policy
+(`QUEUE_<QUEUE>_CONCURRENCY`, `QUEUE_<QUEUE>_ATTEMPTS`,
+`QUEUE_<QUEUE>_BACKOFF_MS`) with exponential back-off. Queue depth and job
+outcomes are exported as Prometheus metrics, and admins can inspect, pause and
+resume queues at `GET /api/v1/admin/queues`.
+
+Queued exports use `POST /api/v1/shipments/export-jobs`, then poll
+`GET /api/v1/shipments/export-jobs/:id` and download from
+`/api/v1/shipments/export-jobs/:id/download`.
+
+See [docs/queues.md](./docs/queues.md) for job payloads, configuration, metrics
+and operations.
+
+---
+
 ## Response Format
 
 All responses are wrapped by the global `TransformInterceptor`:
@@ -538,6 +564,11 @@ npm run sbom
 | `OVERDUE_REMINDER_1_DAYS` | No | Days after dueAt when initial overdue notification is sent (default: 0) |
 | `OVERDUE_REMINDER_3_DAYS` | No | Days after initial reminder when escalation notification is sent (default: 3) |
 | `DISPUTE_ESCALATION_DAYS` | No | Days a milestone can remain in DISPUTED status before admins are alerted (default: 7) |
+| `QUEUE_PREFIX` | No | Redis key prefix for BullMQ queues (default: `chainsettle`) |
+| `QUEUE_METRICS_INTERVAL_MS` | No | How often queue depths are exported to Prometheus (default: 15000) |
+| `QUEUE_WEBHOOKS_CONCURRENCY` / `QUEUE_EMAILS_CONCURRENCY` / `QUEUE_EXPORTS_CONCURRENCY` | No | Worker concurrency per queue (defaults: 5 / 3 / 2) |
+| `QUEUE_WEBHOOKS_ATTEMPTS` / `QUEUE_EMAILS_ATTEMPTS` / `QUEUE_EXPORTS_ATTEMPTS` | No | Total attempts per job before it is parked as failed (defaults: 5 / 5 / 3) |
+| `QUEUE_WEBHOOKS_BACKOFF_MS` / `QUEUE_EMAILS_BACKOFF_MS` / `QUEUE_EXPORTS_BACKOFF_MS` | No | Exponential back-off base delay per queue (defaults: 5000 / 10000 / 5000) |
 
 ---
 
